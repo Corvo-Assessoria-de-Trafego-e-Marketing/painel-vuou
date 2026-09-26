@@ -271,7 +271,10 @@ async function main() {
   });
 
   const daily = rows
-    .filter(r => parseFloat(r.spend) > 0)
+    // mantém dia sem gasto se teve impressão ou resultado: a Meta credita conversão
+    // (contato, seguidor, conversa) a anúncio que não gastou naquele dia — clicou
+    // antes, converteu depois. Descartar essas linhas sumia com o resultado.
+    .filter(r => parseFloat(r.spend) > 0 || +r.impressions > 0 || (r.actions || []).length || (r.conversions || []).length)
     .map(toRow)
     .sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : 0);
 

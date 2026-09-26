@@ -157,7 +157,7 @@ async function main() {
     FROM campaign WHERE ${RANGE}`);
   const daily = dRows
     .map(r => lean({ d: r.segments.date, c: String(r.campaign.id), ...met(r.metrics) }))
-    .filter(r => r.i || r.s)
+    .filter(r => r.i || r.s || r.cv)
     .sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
   if (!daily.length) throw new Error("nenhuma linha com dados — confira GOOGLE_CUSTOMER_ID, a MCC e o período");
   const comDados = new Set(daily.map(r => r.c));
@@ -221,7 +221,7 @@ async function main() {
         title: hl.slice(0, 3).map(h => h.text).join(" | ") || r.adGroupAd.ad.name || `Anúncio ${id.slice(-5)}`,
         status: r.adGroupAd.status };
       const row = lean({ d: r.segments.date, a: id, c: String(r.campaign.id), ...met(r.metrics) });
-      if (row.i || row.s) ad_daily.push(row);
+      if (row.i || row.s || row.cv) ad_daily.push(row);
     }
     ads = Object.values(adMeta).filter(a => ad_daily.some(r => r.a === a.id));
   }
@@ -238,7 +238,7 @@ async function main() {
       kwMeta[k] ||= { id: k, c: String(r.campaign.id), agn: r.adGroup.name,
         kw: r.adGroupCriterion.keyword.text, mt: r.adGroupCriterion.keyword.matchType, status: r.adGroupCriterion.status };
       const row = lean({ d: r.segments.date, k, c: String(r.campaign.id), ...met(r.metrics) });
-      if (row.i || row.s) kw_daily.push(row);
+      if (row.i || row.s || row.cv) kw_daily.push(row);
     }
     keywords = Object.values(kwMeta).filter(k => kw_daily.some(r => r.k === k.id));
 
@@ -267,7 +267,7 @@ async function main() {
       const id = String(r.assetGroup.id);
       agMeta[id] ||= { id, c: String(r.campaign.id), name: r.assetGroup.name, status: r.assetGroup.status };
       const row = lean({ d: r.segments.date, g: id, c: String(r.campaign.id), ...met(r.metrics) });
-      if (row.i || row.s) ag_daily.push(row);
+      if (row.i || row.s || row.cv) ag_daily.push(row);
     }
     asset_groups = Object.values(agMeta).filter(g => ag_daily.some(r => r.g === g.id));
 
