@@ -36,10 +36,21 @@ const GROUPS = [
     kpi2: "tp", kpi2_label: "ThruPlay", kpi2_unit: "ThruPlay" },
   { key: "C3", tag: "C3",
     label: "Mensagens · Conversas Iniciadas",
-    goal: "Transformar interesse em conversa no direct/WhatsApp.",
+    goal: "Transformar interesse em conversa direto no WhatsApp/direct — o anúncio abre a conversa.",
     kpi: "conv", kpi_label: "Conversas iniciadas", kpi_unit: "conversa",
     kpi2: "conn", kpi2_label: "Contatos por mensagem", kpi2_unit: "contato" },
+  // C3 que leva para o SITE: a conversão é o evento Contact do pixel, disparado
+  // no clique do botão de WhatsApp da página. Separado do C3 de mensagens porque
+  // é outra conversão — somar os dois inflava o custo por conversa.
+  { key: "C3S", tag: "C3 Site",
+    label: "Site · Contatos no WhatsApp",
+    goal: "Levar ao site e gerar contato no botão de WhatsApp da página (evento Contact do pixel).",
+    kpi: "ct", kpi_label: "Contatos no site", kpi_unit: "contato",
+    kpi2: "lpv", kpi2_label: "Visualizações da página", kpi2_unit: "visualização" },
 ];
+/* campanha que otimiza para o evento Contact do pixel → grupo C3S (decidido pela
+   configuração dos conjuntos, não pelo nome: as duas C3 têm "MENSAGEM" no nome) */
+let SITE_CONTACT = new Set();
 // "CRV-C1-…", "CRV-C-C3-…", "C2 - …": C + dígito isolado por - _ espaço ou borda
 const grupoDoNome = nome => { const m = String(nome || "").match(/(?:^|[-_s])C([123])(?=[-_s]|$)/i); return m ? "C" + m[1] : null; };
 let CAMP2GROUP = {};   // id da campanha → key do grupo (montado no main)
@@ -85,7 +96,7 @@ const IF = [
   "actions", "instagram_profile_follow", "instagram_profile_visits",
   "video_thruplay_watched_actions", "video_p25_watched_actions",
   "video_p50_watched_actions", "video_p75_watched_actions", "video_p100_watched_actions",
-  "video_play_actions",
+  "video_play_actions", "conversions",
 ].join(",");
 
 /* mapeia uma linha da API para o formato compacto do painel */
@@ -117,6 +128,11 @@ function toRow(r) {
   // visualizações de 3 segundos — base do hook rate (v3 ÷ impressões) e da
   // retenção 50% (p50 ÷ v3). Na API crua é o action_type "video_view".
   const v3   = pick(a, ["video_view"]);
+  // contato no site (evento Contact do pixel) — a Meta expõe em `conversions`
+  // como contact_website; fallback no array actions
+  const ct   = pick(r.conversions, ["contact_website", "contact_total"])
+    || pick(a, ["offsite_conversion.fb_pixel_contact", "contact_website", "contact_total"]);
+  const lpv  = pick(a, ["landing_page_view", "omni_landing_page_view"]);
 
   // resultado padrão por objetivo da campanha
   const plan = GROUPS.find(g => g.key === CAMP2GROUP[r.campaign_id]);
@@ -130,6 +146,8 @@ function toRow(r) {
   if (p100) o.p100 = p100;
   if (pl)   o.pl = pl;
   if (v3)   o.v3 = v3;
+  if (ct)   o.ct = ct;
+  if (lpv)  o.lpv = lpv;
 
   // funil de mensagens
   const m = {};
@@ -150,6 +168,7 @@ function toRow(r) {
   if (Object.keys(m).length) o.m = m;
 
   if (plan?.key === "C3") o.res = m.conv || 0;
+  if (plan?.key === "C3S") o.res = ct;
   return o;
 }
 
@@ -228,7 +247,14 @@ async function main() {
   });
 
   const campById = Object.fromEntries(campMeta.map(c => [c.id, c]));
-  for (const c of campMeta) { const g = grupoDoNome(c.name); if (g) CAMP2GROUP[c.id] = g; }
+  const adsets = await getAll(`act_${ACCOUNT}/adsets`, { fields: "campaign_id,optimization_goal,promoted_object" });
+  SITE_CONTACT = new Set(adsets.filter(s => s.optimization_goal === "OFFSITE_CONVERSIONS"
+    && String(s.promoted_object?.custom_event_type || "").toUpperCase() === "CONTACT").map(s => s.campaign_id));
+  for (const c of campMeta) {
+    let g = grupoDoNome(c.name);
+    if (g === "C3" && SITE_CONTACT.has(c.id)) g = "C3S";
+    if (g) CAMP2GROUP[c.id] = g;
+  }
   WATCHED = Object.keys(CAMP2GROUP);
   const semGrupo = campMeta.filter(c => !CAMP2GROUP[c.id]);
   if (semGrupo.length) console.warn("    aviso: campanhas sem C1/C2/C3 no nome ficam fora do painel: " + semGrupo.map(c => c.name).join(" | "));

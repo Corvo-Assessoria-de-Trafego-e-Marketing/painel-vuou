@@ -23,10 +23,12 @@ Na Vuou cada impulsionamento de post vira uma campanha nova no Meta, então uma 
 |---|---|---|
 | **C1** · tráfego / impulsionamentos | visitas ao perfil | seguidores, cliques no link |
 | **C2** · vídeo | quem viu 50%+ | ThruPlay, hook rate, retenção 50% |
-| **C3** · mensagens | conversas iniciadas | contatos por mensagem, conversas novas |
+| **C3** · mensagens (anúncio abre o WhatsApp) | conversas iniciadas | contatos por mensagem, conversas novas |
+| **C3 Site** · leva ao site | contatos no site (evento **Contact** do pixel, botão de WhatsApp da página) | visualizações da página, cliques no link |
 
 - **Campanha nova só aparece se o nome seguir o padrão.** Sem C1/C2/C3 no nome ela fica fora — e o log do Actions avisa quais ficaram.
 - **Alcance de grupo:** alcance é gente única e não soma entre campanhas. Quando mais de uma campanha do grupo veiculou no período, o alcance do grupo aparece como — com a explicação; o da conta inteira continua valendo.
+- **C3 × C3 Site:** as duas têm C3 no nome; o que separa é a configuração — campanha cujo conjunto otimiza para o evento **Contact** do pixel vai para C3 Site. São conversões diferentes (conversa aberta pelo anúncio × clique no botão do site) e somar as duas inflava o custo por conversa.
 - Configuração dos grupos (rótulos e métricas): bloco `GROUPS` no topo de `scripts/fetch-meta.mjs`.
 
 **Por que visitas ao perfil e não seguidores na C1?** Visitas é o que a Meta otimiza nos impulsionamentos e o que tem volume; seguidores ainda é pouco para significar algo. Quando a base crescer, é só trocar `kpi` e `kpi2` de lugar no grupo C1.

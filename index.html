@@ -419,6 +419,8 @@ const GLOSS = {
   conexoes:"Contatos por mensagem (API da Meta: total_messaging_connection): contatos que abriram conversa por mensagem com a empresa a partir do anúncio. A Meta não publica a definição exata desta métrica — use Conversas iniciadas como número principal; este fica como apoio.",
   saudacao:"Saudação vista: pessoas que abriram a conversa e viram a mensagem automática de boas-vindas.",
   resposta:"Conversas novas (Meta: 'New messaging conversations'): conversas com quem NUNCA tinha mandado mensagem para a empresa antes. É a parte das conversas iniciadas que é contato 100% novo — o resto é gente que já conversava e voltou.",
+  contatosite:"Contatos no site: cliques no botão de WhatsApp da página, registrados pelo pixel da Meta como evento Contact. É a conversão da campanha que leva para o site — diferente de 'conversa iniciada', em que o anúncio abre o WhatsApp direto.",
+  lpv:"Visualizações da página: pessoas que clicaram no anúncio e esperaram a página do site carregar (o pixel registrou a visita).",
   hook:"Hook rate: de cada 100 vezes que o vídeo apareceu na tela, em quantas a pessoa assistiu pelo menos 3 segundos (visualizações de 3s ÷ impressões). Mede se o começo do vídeo segura a rolagem.",
   ret50:"Retenção 50%: de quem assistiu 3 segundos, quantos chegaram à metade do vídeo (visualizações de 50% ÷ visualizações de 3s). Mede se o vídeo segura depois do gancho.",
   rep7:"Responderam em 7 dias: pessoas que voltaram a escrever depois da sua resposta, dentro de 7 dias.",
@@ -459,7 +461,7 @@ const state = { tab: "geral", preset: "last_30d", from: null, to: null, trend: "
   gcamp: "all", gkw: null, gAllTerms: false };
 
 /* ─────────── agregação ─────────── */
-const KEYS  = ["s","i","rc","ck","res","fol","lc","tp","p50","p75","p100","pl","v3"];
+const KEYS  = ["s","i","rc","ck","res","fol","lc","tp","p50","p75","p100","pl","v3","ct","lpv"];
 const MKEYS = ["conv","conn","welc","repl","rep7","d2","d3","d5"];
 
 function blank(){ const o={}; KEYS.forEach(k=>o[k]=0); MKEYS.forEach(k=>o[k]=0); o.days=new Set(); return o; }
@@ -624,7 +626,7 @@ function kpisHTML(A){
   const t = A.total;
   let cards;
   if (state.tab === "geral"){
-    const HK = { fol:"seguidores", p50:"p50", conv:"conversas", tp:"thruplay", res:"visitas", lc:"linkclick" };
+    const HK = { fol:"seguidores", p50:"p50", conv:"conversas", tp:"thruplay", res:"visitas", lc:"linkclick", ct:"contatosite", lpv:"lpv" };
     const porCampanha = DATA.campaigns
       .filter(c => A.byCamp[c.id] && A.byCamp[c.id].s > 0)
       /* com Google: fica de fora só a campanha de vídeo (views não se comparam entre plataformas) */
@@ -668,7 +670,7 @@ function kpisHTML(A){
     ];
   } else {
     const c = DATA.campaigns.find(x => x.id === state.tab);
-    const HK = { fol:"seguidores", p50:"p50", conv:"conversas", tp:"thruplay", res:"visitas", lc:"linkclick", conn:"conexoes", repl:"resposta" };
+    const HK = { fol:"seguidores", p50:"p50", conv:"conversas", tp:"thruplay", res:"visitas", lc:"linkclick", conn:"conexoes", repl:"resposta", ct:"contatosite", lpv:"lpv" };
     /* nomes claros para as métricas de mensagem (o data.json ainda pode trazer o nome antigo) */
     const NOME = { conn:"Contatos por mensagem", repl:"Conversas novas" };
     const card = (label, key) => ({ k:NOME[key] || label, v:NUM(t[key]||0), s:uCost(t.s, t[key]||0) + " cada", hk:HK[key] });
@@ -680,6 +682,8 @@ function kpisHTML(A){
       ? [["Assistiram 100%","p100"], ["Viram 75%","p75"], ["Reproduções","pl"]]
       : c.key === "C3"
       ? [["Conversas novas","repl"], ["Contatos por mensagem","conn"], ["Saudação vista","welc"]]
+      : c.key === "C3S"
+      ? [["Cliques no link","lc"], ["Visualizações da página","lpv"]]
       : [["Cliques no link","lc"], ["Visitas ao perfil","res"], ["Seguidores","fol"]];
     const pick3 = cand.find(([, k]) => !usados.has(k)) || cand[0];
     const third = card(pick3[0], pick3[1]);
@@ -715,6 +719,10 @@ function stagesFor(c, t){
     ["Impressões", t.i, "impressoes"], ["Cliques", t.ck, null],
     ["Cliques no link", t.lc, "linkclick"], ["Visitas ao perfil", t.res, "visitas"],
     ["Seguidores", t.fol, "seguidores"],
+  ];
+  if (c.key === "C3S") return [
+    ["Impressões", t.i, "impressoes"], ["Cliques no link", t.lc, "linkclick"],
+    ["Visualizações da página", t.lpv, "lpv"], ["Contatos no site", t.ct, "contatosite"],
   ];
   if (c.key === "C2") return [
     ["Reproduções", t.pl, "reproducoes"], ["ThruPlay", t.tp, "thruplay"],
@@ -776,7 +784,7 @@ function funnelHTML(A){
       <div class="fright"><div class="fval">${NUM(s[1])}</div><span class="frate">${uCost(A.total.s, s[1])} cada</span></div>
     </div>`;
   }).join("");
-  return `<div class="panel"><div class="phead"><div><h3>Funil de ${c.key==="C2"?"retenção do vídeo":c.key==="C3"?"conversa":"crescimento"}</h3>
+  return `<div class="panel"><div class="phead"><div><h3>Funil de ${c.key==="C2"?"retenção do vídeo":c.key==="C3"?"conversa":c.key==="C3S"?"contato no site":"crescimento"}</h3>
     <div class="psub">${esc(c.name)}</div></div>
     <div class="psub">Investido <b>${BRL0(A.total.s)}</b></div></div>
     <div class="funnel">${body}</div></div>`;
