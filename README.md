@@ -1,4 +1,4 @@
-# Painel Vuou · Meta Ads
+# Painel Vuou · Meta + Google Ads
 
 Dashboard estático de performance com **filtro de data livre**, que se atualiza sozinho de hora em hora.
 
@@ -15,21 +15,31 @@ Mesmo sistema de design e mesma engenharia do [painel Geoplas](https://brenoferg
 
 ---
 
-## O que está rodando hoje
+## Campanhas do Meta: agrupadas pelo NOME (C1 · C2 · C3)
 
-| Campanha | Objetivo principal no painel | Métricas de apoio |
+Na Vuou cada impulsionamento de post vira uma campanha nova no Meta, então uma lista fixa de IDs ficava velha em dias — em set/2026 três campanhas (duas ativas) gastavam fora do painel. Agora **não existe lista de IDs**: toda campanha da conta cujo nome traz `C1`, `C2` ou `C3` (`CRV-C1-…`, `CRV-C-C3-…`) entra sozinha no grupo, e o grupo soma as campanhas dele.
+
+| Grupo | Métrica principal | Apoio |
 |---|---|---|
-| **C1** · `CRV-C1-TRAFEGO-TESTE1-240-08-26` | **Visitas ao perfil** e custo por visita | seguidores, cliques no link, funil impressões → cliques → visitas → seguidores |
+| **C1** · tráfego / impulsionamentos | visitas ao perfil | seguidores, cliques no link |
+| **C2** · vídeo | quem viu 50%+ | ThruPlay, hook rate, retenção 50% |
+| **C3** · mensagens | conversas iniciadas | contatos por mensagem, conversas novas |
 
-A conta é nova: a campanha começou em **24/08/2026**, então o histórico é curto e os números ainda oscilam bastante.
+- **Campanha nova só aparece se o nome seguir o padrão.** Sem C1/C2/C3 no nome ela fica fora — e o log do Actions avisa quais ficaram.
+- **Alcance de grupo:** alcance é gente única e não soma entre campanhas. Quando mais de uma campanha do grupo veiculou no período, o alcance do grupo aparece como — com a explicação; o da conta inteira continua valendo.
+- Configuração dos grupos (rótulos e métricas): bloco `GROUPS` no topo de `scripts/fetch-meta.mjs`.
 
-**Por que visitas ao perfil e não seguidores como métrica principal?** Nos primeiros 4 dias a campanha gerou 137 visitas ao perfil e 2 seguidores. Visitas é o que a Meta está otimizando nesta campanha (`profile_visit_view`) e o que tem volume para significar algo; com 2 seguidores, um "custo por seguidor de R$ 24,79" diria mais sobre o tamanho da amostra do que sobre a campanha. Seguidores aparece como métrica de apoio e no fim do funil. **Quando a base crescer, é só trocar `kpi` e `kpi2` de lugar** no bloco `PLAN` de `scripts/fetch-meta.mjs`.
+**Por que visitas ao perfil e não seguidores na C1?** Visitas é o que a Meta otimiza nos impulsionamentos e o que tem volume; seguidores ainda é pouco para significar algo. Quando a base crescer, é só trocar `kpi` e `kpi2` de lugar no grupo C1.
 
-## Quando entrarem C2 e C3
+## Google Ads (aba "Google Ads")
 
-O `PLAN` no topo de `scripts/fetch-meta.mjs` já tem os blocos de **C2 (visualização de vídeo, meta = quem vê 50%+)** e **C3 (conversas iniciadas)** prontos e comentados. Para ativar: descomentar e pôr o `id` da campanha. Nada mais precisa mudar — o `index.html` é genérico e cria a aba, o funil e o ranking de criativos sozinho, seja com 1 campanha ou com 5.
+Conta `784-306-6364`. Mesmo código do painel da Geoplas: `scripts/fetch-google.mjs` gera `data-google.json`.
 
-O painel também aceita campanhas fora do padrão C1/C2/C3: basta acrescentar uma entrada no `PLAN` com o `kpi` que fizer sentido.
+- **G1** fixada pelo ID: `00-LEAD-CONTATO-WHATS-MADRID` (`24220495323`). **Todas as outras campanhas** com gasto desde `GOOGLE_SINCE` (ativas, pausadas, removidas) entram como G2, G3… — o total bate com o "Total: conta" do gerenciador.
+- Seletor de campanha com busca (ativas com bolinha verde), palavras-chave, termos de pesquisa (clique numa palavra-chave filtra os termos), anúncios, grupos de recursos do PMax e o quadro "o que está contando como conversão".
+- **Acesso:** o script descobre sozinho se entra direto na conta ou pela MCC `914-731-2925`.
+- **Credenciais:** os mesmos 4 secrets da Geoplas — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_DEVELOPER_TOKEN`, `GOOGLE_REFRESH_TOKEN` — cadastrados **neste** repositório (secret de repositório não é compartilhado entre repositórios). Sem eles o passo do Google é pulado e o painel fica só com Meta.
+- `node scripts/gerar-refresh-token.mjs` (no seu terminal, não pelo chat) testa o acesso à conta da Vuou antes de cadastrar.
 
 ## Alcance: por que ele não aparece em intervalo personalizado
 
@@ -43,7 +53,7 @@ A frequência (impressões ÷ alcance) segue a mesma regra.
 
 ## Filtro de período
 
-- **Atalhos:** último dia, 7, 30, 90 dias, este mês, tudo.
+- **Atalhos:** hoje, ontem, 7, 30, 90 dias, este mês, tudo. Igual aos gerenciadores: **7, 30 e 90 dias terminam ontem**; Hoje, Este mês e Tudo vão até hoje.
 - **Data livre:** os dois campos de data aceitam qualquer intervalo dentro do histórico. KPIs, funil, gráfico e ranking de criativos recalculam juntos.
 
 O recorte roda no navegador sobre as linhas diárias por anúncio guardadas em `data.json` — por isso qualquer intervalo funciona sem ida à API.
@@ -96,7 +106,8 @@ Histórico real puxado da Meta e **conferido contra os agregados oficiais**: no 
 ## Ajustes rápidos
 
 - **Frequência:** `cron` em `.github/workflows/update-data.yml`.
-- **Campanhas monitoradas e KPI de cada uma:** bloco `PLAN` em `scripts/fetch-meta.mjs`.
+- **Grupos do Meta e KPI de cada um:** bloco `GROUPS` em `scripts/fetch-meta.mjs` (as campanhas entram pelo nome).
+- **Campanha do Google fixada:** bloco `PLAN` em `scripts/fetch-google.mjs`.
 - **Visual e textos:** `index.html`.
 
 ## Rodar local

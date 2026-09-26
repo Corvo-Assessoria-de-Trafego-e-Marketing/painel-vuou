@@ -17,33 +17,33 @@ const THUMBDIR = join(ROOT, "thumbs");
 
 if (!TOKEN) { console.error("ERRO: defina o secret META_TOKEN."); process.exit(1); }
 
-/* ── campanhas monitoradas ───────────────────────────────────────────────
-   Para trocar/adicionar campanha: edite este bloco (é a única coisa que o
-   painel precisa saber sobre a estratégia). `kpi` é a chave da métrica
-   principal dentro de cada linha diária.                                  */
-const PLAN = [
-  { id: "120247500090530489", key: "C1", tag: "C1",
+/* ── campanhas monitoradas: GRUPOS pelo nome ─────────────────────────────
+   Na Vuou cada impulsionamento de post cria uma campanha nova, então uma lista
+   fixa de IDs fica velha em dias. Em vez disso, toda campanha da conta cujo
+   NOME traz C1, C2 ou C3 (ex.: CRV-C1-…, CRV-C-C3-…) entra sozinha no grupo.
+   Os números do grupo são a soma das campanhas dele. `kpi` é a chave da
+   métrica principal dentro de cada linha diária.                           */
+const GROUPS = [
+  { key: "C1", tag: "C1",
     label: "Tráfego · Visitas ao Perfil e Seguidores",
     goal: "Levar público novo ao perfil da Vuou e converter em seguidor.",
     kpi: "res", kpi_label: "Visitas ao perfil", kpi_unit: "visita",
     kpi2: "fol", kpi2_label: "Seguidores",      kpi2_unit: "seguidor" },
-  { id: "120247706879860489", key: "C1", tag: "C1",
-    label: "Tráfego · Visitas ao Perfil e Seguidores",
-    goal: "Levar público novo ao perfil da Vuou e converter em seguidor.",
-    kpi: "res", kpi_label: "Visitas ao perfil", kpi_unit: "visita",
-    kpi2: "fol", kpi2_label: "Seguidores",      kpi2_unit: "seguidor" },
-  { id: "120247675795950489", key: "C2", tag: "C2",
+  { key: "C2", tag: "C2",
     label: "Engajamento · Visualização de Vídeo (milhas)",
     goal: "Fazer os vídeos educativos de milhas serem assistidos — meta principal: quem vê pelo menos 50%.",
     kpi: "p50", kpi_label: "Viram 50%+ do vídeo", kpi_unit: "visualização 50%",
     kpi2: "tp", kpi2_label: "ThruPlay", kpi2_unit: "ThruPlay" },
-  { id: "120247691052460489", key: "C3", tag: "C3",
-    label: "Conversas Iniciadas",
+  { key: "C3", tag: "C3",
+    label: "Mensagens · Conversas Iniciadas",
     goal: "Transformar interesse em conversa no direct/WhatsApp.",
     kpi: "conv", kpi_label: "Conversas iniciadas", kpi_unit: "conversa",
-    kpi2: "conn", kpi2_label: "Conexões de mensagem", kpi2_unit: "conexão" },
+    kpi2: "conn", kpi2_label: "Contatos por mensagem", kpi2_unit: "contato" },
 ];
-const WATCHED = PLAN.map(p => p.id);
+// "CRV-C1-…", "CRV-C-C3-…", "C2 - …": C + dígito isolado por - _ espaço ou borda
+const grupoDoNome = nome => { const m = String(nome || "").match(/(?:^|[-_s])C([123])(?=[-_s]|$)/i); return m ? "C" + m[1] : null; };
+let CAMP2GROUP = {};   // id da campanha → key do grupo (montado no main)
+let WATCHED = [];      // ids de todas as campanhas agrupadas
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 async function getAll(path, params) {
@@ -94,7 +94,8 @@ function toRow(r) {
   const o = {
     d: r.date_start,
     a: r.ad_id,
-    c: r.campaign_id,
+    c: CAMP2GROUP[r.campaign_id],   // o painel trabalha por grupo (C1/C2/C3)
+    oc: r.campaign_id,               // campanha de origem, para conferência
     s: +(+r.spend).toFixed(2),
     i: num(r.impressions),
     rc: num(r.reach),
@@ -113,9 +114,12 @@ function toRow(r) {
   const p75  = sumArr(r.video_p75_watched_actions);
   const p100 = sumArr(r.video_p100_watched_actions);
   const pl   = sumArr(r.video_play_actions);
+  // visualizações de 3 segundos — base do hook rate (v3 ÷ impressões) e da
+  // retenção 50% (p50 ÷ v3). Na API crua é o action_type "video_view".
+  const v3   = pick(a, ["video_view"]);
 
   // resultado padrão por objetivo da campanha
-  const plan = PLAN.find(p => p.id === r.campaign_id);
+  const plan = GROUPS.find(g => g.key === CAMP2GROUP[r.campaign_id]);
   o.res = plan?.key === "C2" ? tp : visits;
 
   if (follows) o.fol = follows;
@@ -125,6 +129,7 @@ function toRow(r) {
   if (p75)  o.p75 = p75;
   if (p100) o.p100 = p100;
   if (pl)   o.pl = pl;
+  if (v3)   o.v3 = v3;
 
   // funil de mensagens
   const m = {};
@@ -153,15 +158,23 @@ function toRow(r) {
    Alcance é gente ÚNICA: não pode ser somado entre dias nem entre campanhas.
    Então buscamos o número pronto na Meta para cada atalho de período que o
    painel oferece. Intervalo personalizado fica sem alcance (mostra "—").     */
-function janelas(first, last) {
-  const d = x => { const y = new Date(last + "T12:00:00"); y.setDate(y.getDate() - (x - 1)); return y.toISOString().slice(0, 10); };
+/* Mesmas janelas dos atalhos do index.html (presetRange) — as duas precisam
+   bater exatamente, senão o painel não encontra o alcance da janela.
+   Igual aos gerenciadores Meta/Google: 7/30/90 dias terminam ONTEM; "Hoje",
+   "Este mês" e "Tudo" vão até hoje. `hoje` = data em Brasília no momento da coleta. */
+const addDias = (iso, n) => { const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+const hojeSP = agora => agora.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+function janelas(first, hoje) {
+  const ontem = addDias(hoje, -1), ate = n => ({ from: addDias(ontem, -(n - 1)), until: ontem });
   return {
-    today:      { from: last,                    until: last },
-    last_7d:    { from: d(7),                    until: last },
-    last_30d:   { from: d(30),                   until: last },
-    last_90d:   { from: d(90),                   until: last },
-    this_month: { from: last.slice(0, 7) + "-01", until: last },
-    all:        { from: first,                   until: last },
+    today:      { from: hoje,  until: hoje },
+    yesterday:  { from: ontem, until: ontem },
+    last_7d:    ate(7),
+    last_30d:   ate(30),
+    last_90d:   ate(90),
+    this_month: { from: hoje.slice(0, 7) + "-01", until: hoje },
+    all:        { from: first, until: hoje },
   };
 }
 
@@ -178,9 +191,15 @@ async function alcancePorJanela(first, last) {
       level: "campaign", time_range, fields: "campaign_id,reach,spend",
       filtering: JSON.stringify([{ field: "campaign.id", operator: "IN", value: WATCHED }]),
     });
-    const c = {};
+    // alcance é gente única: não dá para somar campanhas. O grupo só tem alcance
+    // quando exatamente UMA campanha dele veiculou na janela; senão fica null ("—").
+    const c = {}, porGrupo = {};
     let somaCamp = 0;
-    for (const r of camps) { c[r.campaign_id] = num(r.reach); somaCamp += parseFloat(r.spend || 0); }
+    for (const r of camps) {
+      somaCamp += parseFloat(r.spend || 0);
+      if (parseFloat(r.spend || 0) > 0) (porGrupo[CAMP2GROUP[r.campaign_id]] ||= []).push(num(r.reach));
+    }
+    for (const [g, arr] of Object.entries(porGrupo)) c[g] = arr.length === 1 ? arr[0] : null;
     const gastoConta = parseFloat(acct?.spend || 0);
     // só interessa gasto EXCEDENTE (conta > campanhas). Diferença negativa ou
     // de centavos é arredondamento da Meta, não campanha de fora.
@@ -209,6 +228,11 @@ async function main() {
   });
 
   const campById = Object.fromEntries(campMeta.map(c => [c.id, c]));
+  for (const c of campMeta) { const g = grupoDoNome(c.name); if (g) CAMP2GROUP[c.id] = g; }
+  WATCHED = Object.keys(CAMP2GROUP);
+  const semGrupo = campMeta.filter(c => !CAMP2GROUP[c.id]);
+  if (semGrupo.length) console.warn("    aviso: campanhas sem C1/C2/C3 no nome ficam fora do painel: " + semGrupo.map(c => c.name).join(" | "));
+  if (!WATCHED.length) throw new Error("nenhuma campanha com C1/C2/C3 no nome");
   const adById   = Object.fromEntries(adMeta.map(a => [a.id, a]));
 
   // insights diários por anúncio, só das campanhas monitoradas
@@ -266,42 +290,39 @@ async function main() {
     return o;
   }).sort((x, y) => x.name.localeCompare(y.name));
 
-  const seen = new Set();
-  const campaigns = [];
-  for (const p of PLAN) {
-    if (seen.has(p.key)) {
-      const existing = campaigns.find(c => c.key === p.key);
-      existing.ids.push(p.id);
-      const c = campById[p.id] || {};
-      if (c.effective_status === "ACTIVE") existing.status = "ACTIVE";
-      continue;
-    }
-    seen.add(p.key);
-    const c = campById[p.id] || {};
-    campaigns.push({
-      id: p.id, ids: [p.id], key: p.key, tag: p.tag,
-      name: c.name || p.label,
+  // um "campaign" por grupo; members = campanhas reais que entraram nele
+  const campaigns = GROUPS.map(p => {
+    const members = campMeta.filter(c => CAMP2GROUP[c.id] === p.key && daily.some(r => r.oc === c.id))
+      .map(c => ({ id: c.id, name: c.name, status: c.effective_status,
+        spend: +daily.filter(r => r.oc === c.id).reduce((s, r) => s + r.s, 0).toFixed(2) }));
+    const ativas = members.filter(m => m.status === "ACTIVE");
+    const orc = ativas.map(m => campById[m.id]?.daily_budget).filter(Boolean);
+    return {
+      id: p.key, key: p.key, tag: p.tag,
+      name: (ativas.length ? ativas : members).map(m => m.name).join(" + ") || p.label,
       label: p.label, goal: p.goal,
-      objective: c.objective || "",
-      status: c.effective_status === "ACTIVE" ? "ACTIVE" : (c.effective_status || "PAUSED"),
-      daily_budget: c.daily_budget ? Math.round(+c.daily_budget / 100) : null,
+      status: ativas.length ? "ACTIVE" : "PAUSED",
+      daily_budget: orc.length ? Math.round(orc.reduce((s, v) => s + +v, 0) / 100) : null,
+      members,
       kpi: p.kpi, kpi_label: p.kpi_label, kpi_unit: p.kpi_unit,
       kpi2: p.kpi2, kpi2_label: p.kpi2_label, kpi2_unit: p.kpi2_unit,
-    });
-  }
+    };
+  }).filter(c => c.members.length);
 
   const dates = daily.map(r => r.d);
-  const reach = await alcancePorJanela(dates[0], dates[dates.length - 1]);
+  const AGORA = new Date(), HOJE = hojeSP(AGORA);
+  const reach = await alcancePorJanela(dates[0], HOJE);
 
   const data = {
     meta: {
       account_id: ACCOUNT,
       account_name: "Vuou - 01",
       client: "Vuou",
-      client_sub: "Passagens aéreas",
+      client_sub: "Passagens aéreas com milhas",
       currency: "BRL",
       tz: "America/Sao_Paulo",
-      updated_at: new Date().toISOString(),
+      updated_at: AGORA.toISOString(),
+      today: HOJE,               // referência dos atalhos (Brasília) — o painel usa a mesma
       seed: false,
       first_date: dates[0],
       last_date: dates[dates.length - 1],
@@ -320,12 +341,13 @@ async function main() {
   console.log(`    alcance real: ` + Object.entries(reach.windows).map(([k, w]) => k + "=" + w.acc).join("  "));
   let alarme = false;
   for (const c of campaigns) {
-    const rs = daily.filter(r => c.ids.includes(r.c));
+    const rs = daily.filter(r => r.c === c.id);
     const sp = rs.reduce((s, r) => s + r.s, 0);
     const kv = rs.reduce((s, r) => s + (r.m?.[c.kpi] ?? r[c.kpi] ?? 0), 0);
     const zerado = sp > 0 && kv === 0;
     if (zerado) alarme = true;
-    console.log(`    ${c.tag} R$${sp.toFixed(2).padStart(9)}  ${c.kpi_label}: ${kv}${zerado ? "   <-- ZERO com verba gasta, confira o nome do campo" : ""}`);
+    console.log(`    ${c.tag} R${sp.toFixed(2).padStart(9)}  ${c.kpi_label}: ${kv}${zerado ? "   <-- ZERO com verba gasta, confira o nome do campo" : ""}`);
+    for (const m of c.members) console.log(`         · R${m.spend.toFixed(2).padStart(8)}  ${m.status.padEnd(7)} ${m.name}`);
   }
   if (alarme) console.warn("AVISO: alguma métrica principal veio zerada. A Meta ignora campo inválido em silêncio — confira o nome antes de confiar no dado.");
 }

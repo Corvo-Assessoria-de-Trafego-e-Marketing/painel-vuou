@@ -29,27 +29,34 @@ jobs:
           SINCE: ${{ vars.SINCE }}
         run: node scripts/fetch-meta.mjs
 
+      # Isolado: se o Google falhar, o Meta continua sendo publicado.
+      # O "x" vermelho neste passo aparece no Actions para avisar.
       - name: Puxar Google Ads e gerar data-google.json
+        continue-on-error: true
         env:
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_DEVELOPER_TOKEN }}
-          GOOGLE_CUSTOMER_ID: ${{ secrets.GOOGLE_CUSTOMER_ID }}
-          GOOGLE_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_LOGIN_CUSTOMER_ID }}
+          GOOGLE_CUSTOMER_ID: ${{ vars.GOOGLE_CUSTOMER_ID }}
+          GOOGLE_LOGIN_CUSTOMER_ID: ${{ vars.GOOGLE_LOGIN_CUSTOMER_ID }}
           GOOGLE_SINCE: ${{ vars.GOOGLE_SINCE }}
         run: |
           if [ -z "$GOOGLE_REFRESH_TOKEN" ]; then
-            echo "Google Ads secrets não configurados — pulando."
+            echo "Secrets do Google Ads não configurados — pulando."
             exit 0
           fi
+          # variável vazia vira "use o padrão do script"
+          [ -z "$GOOGLE_CUSTOMER_ID" ] && unset GOOGLE_CUSTOMER_ID
+          [ -z "$GOOGLE_LOGIN_CUSTOMER_ID" ] && unset GOOGLE_LOGIN_CUSTOMER_ID
           node scripts/fetch-google.mjs
 
       - name: Commit se houver mudança
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json data-google.json thumbs
+          git add data.json thumbs
+          [ -f data-google.json ] && git add data-google.json
           if [ -n "$(git status --porcelain)" ]; then
             git commit -m "chore: atualiza dados Vuou ($(date -u '+%Y-%m-%d %H:%M UTC'))"
             git push
