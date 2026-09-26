@@ -420,6 +420,7 @@ const GLOSS = {
   saudacao:"Saudação vista: pessoas que abriram a conversa e viram a mensagem automática de boas-vindas.",
   resposta:"Conversas novas (Meta: 'New messaging conversations'): conversas com quem NUNCA tinha mandado mensagem para a empresa antes. É a parte das conversas iniciadas que é contato 100% novo — o resto é gente que já conversava e voltou.",
   contatosite:"Contatos no site: cliques no botão de WhatsApp da página, registrados pelo pixel da Meta como evento Contact. É a conversão da campanha que leva para o site — diferente de 'conversa iniciada', em que o anúncio abre o WhatsApp direto.",
+  connect:"Connect rate: de cada 100 cliques no link, quantos viraram visualização da página (visualizações da página ÷ cliques no link). Baixo = página lenta ou gente desistindo antes de o site carregar.",
   lpv:"Visualizações da página: pessoas que clicaram no anúncio e esperaram a página do site carregar (o pixel registrou a visita).",
   hook:"Hook rate: de cada 100 vezes que o vídeo apareceu na tela, em quantas a pessoa assistiu pelo menos 3 segundos (visualizações de 3s ÷ impressões). Mede se o começo do vídeo segura a rolagem.",
   ret50:"Retenção 50%: de quem assistiu 3 segundos, quantos chegaram à metade do vídeo (visualizações de 50% ÷ visualizações de 3s). Mede se o vídeo segura depois do gancho.",
@@ -696,7 +697,20 @@ function kpisHTML(A){
       { k:"Retenção 50%", v:semV3 ? "—" : PCT((t.p50 || 0) / t.v3 * 100),
         s:semV3 ? "aguardando a próxima coleta" : NUM(t.p50 || 0) + " viram 50% · de " + NUM(t.v3) + " (3s)", hk:"ret50" },
     ];
-    cards = [
+    /* C3 Site: connect rate ao lado das visualizações da página, no lugar do CPC */
+    if (c.key === "C3S") {
+      const cr = t.lc > 0 ? PCT((t.lpv || 0) / t.lc * 100) : "—";
+      cards = [
+        { k:"Investimento", v:BRL0(t.s), s:`${A.series.length} dias veiculando` },
+        main, second,
+        { k:"Connect rate", v:cr, s:t.lc > 0 ? NUM(t.lpv || 0) + " de " + NUM(t.lc) + " cliques no link" : "sem cliques no período", hk:"connect" },
+        third,
+        { k:"Alcance", v:A.reach===null?"—":NUM(A.reach),
+          s:A.reach===null?A.reachWhy:"pessoas únicas · "+NUM(t.i)+" impr.", hk:"alcance" },
+        { k:"CTR", v:PCT(t.ctr), s:NUM(t.ck)+" cliques", hk:"ctr" },
+        { k:"CPM", v:BRL(t.cpm), s:"por mil impr.", hk:"cpm" },
+      ];
+    } else cards = [
       { k:"Investimento", v:BRL0(t.s), s:`${A.series.length} dias veiculando` },
       main, second, third,
       { k:"Alcance", v:A.reach===null?"—":NUM(A.reach),
