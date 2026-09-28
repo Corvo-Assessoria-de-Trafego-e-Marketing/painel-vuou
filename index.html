@@ -249,6 +249,10 @@
   .gmet{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin-top:11px;}
   .gm .gk{font-size:8.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
   .gm .gv{font-family:var(--font-mono);font-size:13px;font-weight:600;letter-spacing:-.3px;}
+  /* link "Ver anúncio" (pré-visualização da Meta) */
+  .adlink{display:inline-flex;align-items:center;gap:3px;margin-top:5px;padding:2px 8px;border:1px solid var(--border);border-radius:7px;font-size:11px;font-weight:600;color:var(--accent-ink);text-decoration:none;white-space:nowrap;}
+  .adlink:hover{border-color:var(--accent);background:var(--accent-wash);}
+  a.gthumb{display:block;}
 </style>
 <style id="geo">
   /* ===== complementos do painel (Geoplas, Vuou…) sobre o mesmo sistema ===== */
@@ -898,6 +902,9 @@ function creativeRows(A){
   }
   return out;
 }
+/* botão para abrir o anúncio (vídeo/imagem + copy) na pré-visualização da Meta */
+const adLink = ad => ad.link
+  ? `<a class="adlink" href="${esc(ad.link)}" target="_blank" rel="noopener">Ver anúncio ↗</a>` : "";
 function sgTag(x){
   if (x.best)  return `<span class="sg best">★ melhor</span>`;
   if (x.worst) return `<span class="sg worst">pior</span>`;
@@ -919,7 +926,7 @@ function creativesHTML(A){
         <th>Anúncio</th><th>${esc(c.kpi_label)}</th><th>Custo unit.${hlp("custounit")}</th>
         <th>Investido</th><th>CTR${hlp("ctr")}</th><th>CPM${hlp("cpm")}</th><th>Status</th><th>Sinal</th>
       </tr></thead><tbody>${list.map(x => `<tr class="${x.best?"best":""}">
-        <td><div class="crn"><span class="cfull">${esc(x.ad.name)}</span>${x.best?'<span class="star">★</span>':''}</div></td>
+        <td><div class="crn"><span class="cfull">${esc(x.ad.name)}</span>${x.best?'<span class="star">★</span>':''}</div>${adLink(x.ad)}</td>
         <td>${NUM(x.vol)}</td>
         <td>${x.cst===null?"—":BRL(x.cst)}</td>
         <td>${BRL0(x.a.s)} <span class="mini">${(x.a.s/campSpend*100).toFixed(0)}%</span></td>
@@ -934,11 +941,12 @@ function creativesHTML(A){
         ? `<img src="${esc(x.ad.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:'${esc(ini)}'}))">`
         : `<div class="ph">${esc(ini)}</div>`;
       return `<div class="gcard ${x.best?"best":x.worst?"worst":""}">
-        <div class="gthumb">${img}<div class="gbadges">
+        <${x.ad.link?`a class="gthumb" href="${esc(x.ad.link)}" target="_blank" rel="noopener" title="Ver anúncio"`:'div class="gthumb"'}>${img}<div class="gbadges">
           <span class="st ${x.ad.status==="ACTIVE"?"on":"off"}">${x.ad.status==="ACTIVE"?"ativo":"pausado"}</span>
-          ${x.best?'<span class="star">★</span>':''}</div></div>
+          ${x.best?'<span class="star">★</span>':''}</div></${x.ad.link?"a":"div"}>
         <div class="gbody"><div class="gname">${esc(x.ad.name)}</div>
           <div class="gcity">${esc(c.tag)} · ${(x.a.s/campSpend*100).toFixed(0)}% da verba</div>
+          ${adLink(x.ad)}
           <div class="gmet">
             <div class="gm"><div class="gk">${esc(c.kpi_label)}</div><div class="gv">${NUM(x.vol)}</div></div>
             <div class="gm"><div class="gk">Custo unit.</div><div class="gv">${x.cst===null?"—":BRL(x.cst)}</div></div>
