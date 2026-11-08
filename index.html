@@ -936,7 +936,7 @@ function creativesHTML(A){
         <td>${sgTag(x)}</td></tr>`).join("")}</tbody></table></div>`;
 
     const gallery = `<div class="gal">${list.map(x => {
-      const ini = (x.ad.name.match(/AD\d+/) || ["◆"])[0];
+      const ini = (x.ad.name.match(/AD-?\d+/) || ["◆"])[0];
       const img = x.ad.img
         ? `<img src="${esc(x.ad.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:'${esc(ini)}'}))">`
         : `<div class="ph">${esc(ini)}</div>`;

@@ -52,7 +52,25 @@ const GROUPS = [
    configuração dos conjuntos, não pelo nome: as duas C3 têm "MENSAGEM" no nome) */
 let SITE_CONTACT = new Set();
 // "CRV-C1-…", "CRV-C-C3-…", "C2 - …": C + dígito isolado por - _ espaço ou borda
-const grupoDoNome = nome => { const m = String(nome || "").match(/(?:^|[-_s])C([123])(?=[-_s]|$)/i); return m ? "C" + m[1] : null; };
+// Nome novo (padrão do Victor, 19/10/2026): CRV-FRENTE-OBJETIVO-ETAPA-TEMPERATURA-POSICIONAMENTO-AAAA-MM-DD.
+// Mesma dedução de ler() em estudio/lib/nomenclatura.mjs (método do Victor, §7.5): LEAD ou RMKT = C3;
+// TOPO + SEGUIDORES ou RECONHEC = C1; TOPO + ENGAJ, VV ou TRAFEGO = C2.
+const RX_NOME_NOVO = /^CRV-[A-Z0-9_]+-(LEAD|ENGAJ|VV|TRAFEGO|WHATS|VENDAS|SEGUIDORES|RECONHEC)-(TOPO|LEAD|RMKT)-(COLD|WARM|HOT)-(AUTO|FEED|STORY)-\d{4}-\d{2}-\d{2}$/;
+function grupoDoNomeNovo(nome) {
+  const m = RX_NOME_NOVO.exec(String(nome || "").trim());
+  if (!m) return null;
+  const [, objetivo, etapa] = m;
+  if (etapa !== "TOPO") return "C3";
+  if (["SEGUIDORES", "RECONHEC"].includes(objetivo)) return "C1";
+  if (["ENGAJ", "VV", "TRAFEGO"].includes(objetivo)) return "C2";
+  return null;
+}
+const grupoDoNome = nome => {
+  const novo = grupoDoNomeNovo(nome);
+  if (novo) return novo;
+  const m = String(nome || "").match(/(?:^|[-_\s])C([123])(?=[-_\s]|$)/i);
+  return m ? "C" + m[1] : null;
+};
 let CAMP2GROUP = {};   // id da campanha → key do grupo (montado no main)
 let WATCHED = [];      // ids de todas as campanhas agrupadas
 
@@ -292,8 +310,8 @@ async function main() {
   }
   WATCHED = Object.keys(CAMP2GROUP);
   const semGrupo = campMeta.filter(c => !CAMP2GROUP[c.id]);
-  if (semGrupo.length) console.warn("    aviso: campanhas sem C1/C2/C3 no nome ficam fora do painel: " + semGrupo.map(c => c.name).join(" | "));
-  if (!WATCHED.length) throw new Error("nenhuma campanha com C1/C2/C3 no nome");
+  if (semGrupo.length) console.warn("    aviso: campanhas sem grupo pelo nome (token C1/C2/C3 ou padrão novo) ficam fora do painel: " + semGrupo.map(c => c.name).join(" | "));
+  if (!WATCHED.length) throw new Error("nenhuma campanha com grupo pelo nome");
   const adById   = Object.fromEntries(adMeta.map(a => [a.id, a]));
 
   // insights diários por anúncio, só das campanhas monitoradas
