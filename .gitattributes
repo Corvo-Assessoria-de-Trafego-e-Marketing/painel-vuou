@@ -1,0 +1,2 @@
+# Hook de commit roda no sh do Git: precisa de fim de linha LF
+.githooks/pre-commit text eol=lf

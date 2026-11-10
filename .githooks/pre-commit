@@ -1,0 +1,19 @@
+#!/bin/sh
+# Hook de commit da Corvo: barra senha, token e chave antes de irem para o GitHub.
+# Ativado com: git config core.hooksPath .githooks  (o sync-corvo.ps1 faz isso sozinho)
+# Detalhes e regras: .githooks/checar-segredos.ps1 e .gitleaks.toml
+
+raiz=$(git rev-parse --show-toplevel) || exit 1
+script="$raiz/.githooks/checar-segredos.ps1"
+
+if command -v powershell.exe >/dev/null 2>&1; then
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$script" -Quieto
+elif command -v pwsh >/dev/null 2>&1; then
+    exec pwsh -NoProfile -File "$script" -Quieto
+elif command -v gitleaks >/dev/null 2>&1; then
+    exec gitleaks git --staged --redact --no-banner --config "$raiz/.gitleaks.toml"
+else
+    echo "AVISO: sem PowerShell nem gitleaks nesta maquina; a checagem de segredos NAO rodou." >&2
+    echo "Instale o gitleaks (https://github.com/gitleaks/gitleaks) e fale com o responsavel tecnico." >&2
+    exit 1
+fi
