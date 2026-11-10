@@ -1,0 +1,19 @@
+
+# segredos (padrão Corvo; o hook em .githooks/ barra estes nomes mesmo com git add -f)
+.env
+*.env
+.env.*
+!.env.example
+!.env.exemplo
+.dev.vars
+.dev.vars.*
+*.pem
+*.p12
+*.pfx
+*.key
+credentials*.json
+service-account*.json
+service_account*.json
+client_secret*.json
+id_rsa*
+id_ed25519*

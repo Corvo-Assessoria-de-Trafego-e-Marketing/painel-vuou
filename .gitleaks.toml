@@ -1,0 +1,55 @@
+# Regras de segredo da Corvo para o gitleaks (https://github.com/gitleaks/gitleaks).
+# Usadas pelo .githooks/checar-segredos.ps1, que roda antes de cada commit e no sincronizador.
+#
+# Parte das regras padrao do gitleaks e acrescenta os servicos que a Corvo usa
+# e que o padrao nao cobre (por exemplo, o token de acesso da Meta).
+
+title = "Corvo"
+
+[extend]
+useDefault = true
+# "jwt" bloquearia a chave anon do Supabase, que e publica por desenho
+# (a service_role e barrada pela regra propria abaixo e pelo checar-segredos.ps1).
+# "generic-api-key" gera muito alarme falso em documentacao e travaria o sincronizador.
+disabledRules = ["jwt", "generic-api-key"]
+
+[[rules]]
+id = "meta-access-token"
+description = "Token de acesso da Meta (Facebook/Instagram, System User ou usuario)"
+# As bordas excluem + e / para nao disparar dentro de imagem embutida em base64
+# ("=" so aparece no fim de um base64, entao antes do token ele e permitido: NOME=EAA...)
+regex = '''(?:^|[^A-Za-z0-9+/])(EAA[A-Za-z0-9]{60,400})(?:$|[^A-Za-z0-9+/=])'''
+secretGroup = 1
+entropy = 3.5
+keywords = ["eaa"]
+
+[[rules]]
+id = "google-oauth-refresh-token"
+description = "Refresh token OAuth do Google (Google Ads, Drive, Gmail)"
+regex = '''(?:^|[^A-Za-z0-9])(1//0[A-Za-z0-9_\-]{30,})'''
+secretGroup = 1
+entropy = 3.5
+keywords = ["1//0"]
+
+[[rules]]
+id = "supabase-service-role"
+description = "Chave service_role do Supabase (JWT cujo payload contem service_role)"
+# "role":"service_role" em base64url comeca com estes trechos, conforme o alinhamento
+regex = '''\b(eyJ[A-Za-z0-9_\-]*(?:InJvbGUiOiJzZXJ2aWNlX3JvbGUi|Jyb2xlIjoic2VydmljZV9yb2xl|icm9sZSI6InNlcnZpY2Vfcm9s)[A-Za-z0-9_\-]*\.[A-Za-z0-9_\-]{10,})'''
+secretGroup = 1
+keywords = ["eyj"]
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Chave secreta nova do Supabase"
+regex = '''\b(sb_secret_[A-Za-z0-9_\-]{20,})'''
+secretGroup = 1
+keywords = ["sb_secret_"]
+
+[allowlist]
+description = "Valores de exemplo e liberacoes revisadas"
+regexTarget = "line"
+regexes = [
+  '''corvo-segredo:\s*permitido''',
+  '''(?i)x{8,}''',
+]
