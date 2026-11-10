@@ -33,6 +33,11 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $LimiteBytes = 2MB
 
+# Dados pessoais (LGPD). 'avisar' so alerta; 'barrar' trata como segredo (o arquivo nao sobe).
+# Fica em 'avisar' ate os dados pessoais que ja estao no repositorio irem para o lugar certo.
+$ModoDadosPessoais = 'avisar'
+$LimiteContatos = 10    # e-mails ou telefones distintos num mesmo arquivo; um CPF valido ja conta
+
 # ------------------------------------------------------------------
 # regras
 # ------------------------------------------------------------------
@@ -72,9 +77,29 @@ $Regras = @(
 # Chave "anon" do Supabase e publica por desenho e nao bloqueia.
 $PadraoJwt = '\b(eyJ[A-Za-z0-9_\-]{10,}\.(eyJ[A-Za-z0-9_\-]{10,})\.[A-Za-z0-9_\-]{10,})'
 
+# Dados pessoais: lista de contatos (muitos e-mails ou celulares) ou CPF valido.
+# Para liberar um arquivo revisado (ex.: dados ficticios), escreva nele: corvo-dados: permitido
+$PadraoEmail = '[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+'
+$EmailGenerico = '(?i)^(contato|suporte|atendimento|comercial|vendas|financeiro|noreply|no-reply|sac|privacidade|dpo|admin|hello|info|example|exemplo|teste|test|user|usuario|email|seu-?email|nome)@|@(example|exemplo|email|dominio|domain|test|teste|sentry|users\.noreply\.github)\.'
+$PadraoFone = '(?<![\d.,/-])(?:\+?55[\s.-]?)?\(?[1-9]\d\)?[\s.-]?9\d{4}[\s.-]?\d{4}(?![\d.,/-])'
+$PadraoCpf = '(?<![\d.])(\d{3})\.?(\d{3})\.?(\d{3})-?(\d{2})(?![\d.-])'
+$PastasDeExemplo = '(^|/)(node_modules|sample-data|fixtures|__fixtures__|testdata|test-data)/'
+
 # ------------------------------------------------------------------
 # utilidades
 # ------------------------------------------------------------------
+
+function Cpf-Valido {
+    param([string]$Digitos)
+    if ($Digitos.Length -ne 11 -or ($Digitos.ToCharArray() | Sort-Object -Unique).Count -eq 1) { return $false }
+    $n = $Digitos.ToCharArray() | ForEach-Object { [int]"$_" }
+    foreach ($t in 9, 10) {
+        $soma = 0
+        for ($i = 0; $i -lt $t; $i++) { $soma += $n[$i] * ($t + 1 - $i) }
+        if ((($soma * 10) % 11) % 10 -ne $n[$t]) { return $false }
+    }
+    return $true
+}
 
 function Git-Bytes {
     # Roda o git e devolve a saida como bytes (sem conversao de texto).
@@ -152,6 +177,7 @@ if ($null -ne (Git-Bytes @('rev-parse', '-q', '--verify', 'MERGE_HEAD'))) {
 }
 
 $achados = New-Object System.Collections.ArrayList
+$dadosPessoais = New-Object System.Collections.ArrayList
 
 foreach ($arq in $arquivos) {
     foreach ($p in $NomesProibidos) {
@@ -168,6 +194,25 @@ foreach ($arq in $arquivos) {
 
     $texto = [System.Text.Encoding]::UTF8.GetString($bytes)
     $linhas = $texto -split "`n"
+
+    if ($arq -notmatch $PastasDeExemplo -and $texto -notmatch 'corvo-dados:\s*permitido') {
+        $emails = @{}; $fones = @{}; $cpfs = @{}
+        foreach ($m in [regex]::Matches($texto, $PadraoEmail)) {
+            if ($m.Value -notmatch $EmailGenerico) { $emails[$m.Value.ToLower()] = 1 }
+        }
+        foreach ($m in [regex]::Matches($texto, $PadraoFone)) {
+            $d = $m.Value -replace '\D', ''
+            if ($d.Length -gt 11) { $d = $d.Substring($d.Length - 11) }
+            $fones[$d] = 1
+        }
+        foreach ($m in [regex]::Matches($texto, $PadraoCpf)) {
+            $d = $m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value + $m.Groups[4].Value
+            if (Cpf-Valido $d) { $cpfs[$d] = 1 }
+        }
+        if ($emails.Count -ge $LimiteContatos -or $fones.Count -ge $LimiteContatos -or $cpfs.Count -ge 1) {
+            [void]$dadosPessoais.Add([pscustomobject]@{ Arquivo = $arq; Emails = $emails.Count; Fones = $fones.Count; Cpfs = $cpfs.Count })
+        }
+    }
 
     for ($i = 0; $i -lt $linhas.Count; $i++) {
         $linha = $linhas[$i]
@@ -225,6 +270,24 @@ if ($gitleaks -and $arquivos.Count -gt 0) {
 # ------------------------------------------------------------------
 # resultado
 # ------------------------------------------------------------------
+
+if ($dadosPessoais.Count -gt 0) {
+    if ($ModoDadosPessoais -eq 'barrar') {
+        foreach ($d in $dadosPessoais) {
+            [void]$achados.Add([pscustomobject]@{ Arquivo = $d.Arquivo; Linha = '-'; Regra = 'Dados pessoais (LGPD)'
+                Trecho = ("{0} e-mails, {1} telefones, {2} CPF" -f $d.Emails, $d.Fones, $d.Cpfs) })
+        }
+    } else {
+        Write-Host ''
+        Write-Host '=== ATENCAO: DADOS PESSOAIS NO COMMIT (LGPD) ===' -ForegroundColor Yellow
+        foreach ($d in $dadosPessoais) {
+            Write-Host ("  dados pessoais: {0}  ({1} e-mails, {2} telefones, {3} CPF)" -f $d.Arquivo, $d.Emails, $d.Fones, $d.Cpfs) -ForegroundColor Yellow
+        }
+        Write-Host 'Lista de contatos e CPF de clientes, leads ou pacientes nao devem ficar no Git: todo o time'
+        Write-Host 'recebe uma copia e o historico guarda para sempre. Guarde no Drive restrito ou na Central e'
+        Write-Host 'deixe aqui so o link. Por enquanto e so um aviso; o commit segue. Regras: docs/SEGURANCA.md'
+    }
+}
 
 if ($achados.Count -eq 0) {
     if (-not $Quieto) { Write-Host "checar-segredos: nenhum segredo nos $($arquivos.Count) arquivo(s) preparados." -ForegroundColor Green }
