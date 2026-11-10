@@ -89,6 +89,29 @@ $PastasDeExemplo = '(^|/)(node_modules|sample-data|fixtures|__fixtures__|testdat
 # utilidades
 # ------------------------------------------------------------------
 
+function Texto-Office {
+    # Extrai o texto de um .docx ou .xlsx (documento, cabecalhos, rodapes, celulas).
+    # Devolve $null se o arquivo nao for um ZIP valido.
+    param([byte[]]$Bytes)
+    try {
+        Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+        $ms = New-Object System.IO.MemoryStream(, $Bytes)
+        $zip = New-Object System.IO.Compression.ZipArchive($ms, [System.IO.Compression.ZipArchiveMode]::Read)
+        $sb = New-Object System.Text.StringBuilder
+        foreach ($e in $zip.Entries) {
+            if ($e.FullName -match '^(word/(document|header\d*|footer\d*|footnotes|comments)\.xml|xl/sharedStrings\.xml|xl/worksheets/sheet\d+\.xml)$') {
+                $leitor = New-Object System.IO.StreamReader($e.Open(), [System.Text.Encoding]::UTF8)
+                $xml = $leitor.ReadToEnd(); $leitor.Close()
+                # cada paragrafo, linha ou celula vira uma linha; o resto das tags vira espaco
+                $xml = $xml -replace '</(w:p|row|si)>', "`n" -replace '<[^>]+>', ' '
+                [void]$sb.Append([System.Net.WebUtility]::HtmlDecode($xml)).Append("`n")
+            }
+        }
+        $zip.Dispose()
+        return $sb.ToString()
+    } catch { return $null }
+}
+
 function Cpf-Valido {
     param([string]$Digitos)
     if ($Digitos.Length -ne 11 -or ($Digitos.ToCharArray() | Sort-Object -Unique).Count -eq 1) { return $false }
@@ -189,10 +212,15 @@ foreach ($arq in $arquivos) {
 
     $bytes = Git-Bytes @('cat-file', 'blob', ":$arq")
     if ($null -eq $bytes -or $bytes.Length -eq 0 -or $bytes.Length -gt $LimiteBytes) { continue }
-    $amostra = [Math]::Min($bytes.Length, 8000)
-    if ([Array]::IndexOf($bytes, [byte]0, 0, $amostra) -ge 0) { continue }   # binario
-
-    $texto = [System.Text.Encoding]::UTF8.GetString($bytes)
+    if ($arq -match '\.(docx|xlsx)$') {
+        # Word e Excel sao ZIP: le o texto de dentro, em memoria, sem gravar nada em disco
+        $texto = Texto-Office $bytes
+        if ($null -eq $texto) { continue }
+    } else {
+        $amostra = [Math]::Min($bytes.Length, 8000)
+        if ([Array]::IndexOf($bytes, [byte]0, 0, $amostra) -ge 0) { continue }   # binario
+        $texto = [System.Text.Encoding]::UTF8.GetString($bytes)
+    }
     $linhas = $texto -split "`n"
 
     if ($arq -notmatch $PastasDeExemplo -and $texto -notmatch 'corvo-dados:\s*permitido') {

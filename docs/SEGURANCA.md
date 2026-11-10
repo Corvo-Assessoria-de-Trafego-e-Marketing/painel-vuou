@@ -88,7 +88,7 @@ agem sozinhas:
 
 | Trava | Quando age | O que faz |
 |---|---|---|
-| `.githooks/` e `.gitleaks.toml` | Em todo commit (pessoa, GitHub Desktop, IA, sincronizador) | Barra senha, token e chave, mostrando só valores mascarados. Avisa quando um arquivo traz lista de contatos (10 ou mais e-mails ou celulares) ou CPF; arquivo com dados fictícios pode ser liberado com a linha `corvo-dados: permitido`. |
+| `.githooks/` e `.gitleaks.toml` | Em todo commit (pessoa, GitHub Desktop, IA, sincronizador) | Barra senha, token e chave, mostrando só valores mascarados. Avisa quando um arquivo, inclusive Word e Excel, traz lista de contatos (10 ou mais e-mails ou celulares) ou CPF; arquivo com dados fictícios pode ser liberado com a linha `corvo-dados: permitido`. |
 | `.github/workflows/segredos.yml` | No GitHub, a cada push (repositórios de sistema) | Repete a checagem, para quem commitou sem o hook. |
 | `.claude/settings.json` | Sempre que o Claude Code trabalha no repositório | Nega a leitura de `.env`, do cofre e de chaves; pede confirmação antes de a IA editar as próprias travas. |
 | `.claude/hooks/guarda-comandos.ps1` | Antes de cada comando da IA no terminal | **Barra:** pular a checagem (`--no-verify`), ler segredos, push forçado, tornar repositório público, apagar repositório, rodar script baixado da internet. **Pede confirmação:** `git push`, deploy (Cloudflare, Supabase), merge de PR, mudança de secrets, `reset --hard`. **Testa:** roda `npm test` antes do commit, onde há testes. |
