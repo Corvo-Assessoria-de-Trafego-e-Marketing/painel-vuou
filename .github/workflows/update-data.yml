@@ -5,8 +5,8 @@ on:
     - cron: "0 * * * *"      # de hora em hora (UTC)
   workflow_dispatch:          # botão "Run workflow" manual
 
-permissions:
-  contents: write
+# B5 (passo 11): nada por padrão; só o job que publica os dados pode gravar.
+permissions: {}
 
 concurrency:
   group: update-data
@@ -15,12 +15,15 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write   # commit do data.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
+          node-version: "22"   # Node 20 saiu de suporte em 30/04/2026
 
       - name: Puxar Meta Ads e gerar data.json
         env:
