@@ -82,13 +82,32 @@ async function getAll(path, params) {
   if (!params.limit) url.searchParams.set("limit", "500");
   let out = [], next = url.toString(), guard = 0;
   while (next && guard++ < 200) {
-    const r = await fetch(next);
-    const j = await r.json();
-    if (j.error) throw new Error(`${path}: ${j.error.message}`);
+    const j = await chamaMeta(next, path);
     out = out.concat(j.data || []);
     next = j.paging?.next || null;
   }
   return out;
+}
+
+// A Meta às vezes devolve erro passageiro ("An unknown error occurred", limite de chamadas, falha de rede).
+// Tenta de novo com espera crescente antes de desistir; erro de verdade (token, campo inválido) para na hora.
+const ERROS_PASSAGEIROS = [1, 2, 4, 17, 32, 341, 613, 80000, 80004];
+async function chamaMeta(u, path) {
+  let ultimo = "";
+  for (let i = 0; i < 6; i++) {
+    try {
+      const j = await (await fetch(u)).json();
+      if (!j.error) return j;
+      ultimo = j.error.message;
+      if (!ERROS_PASSAGEIROS.includes(j.error.code) && !j.error.is_transient) throw Object.assign(new Error(`${path}: ${ultimo}`), { definitivo: true });
+    } catch (e) {
+      if (e.definitivo) throw e;
+      ultimo = e.message;
+    }
+    console.log(`    Meta: erro passageiro em ${path} (${ultimo}); nova tentativa ${i + 1}/5`);
+    await new Promise(r => setTimeout(r, 15000 * (i + 1)));
+  }
+  throw new Error(`${path}: ${ultimo} (6 tentativas)`);
 }
 
 const num = v => (v == null ? 0 : Math.round(parseFloat(v) || 0));
@@ -314,14 +333,19 @@ async function main() {
   if (!WATCHED.length) throw new Error("nenhuma campanha com grupo pelo nome");
   const adById   = Object.fromEntries(adMeta.map(a => [a.id, a]));
 
-  // insights diários por anúncio, só das campanhas monitoradas
-  const rows = await getAll(`act_${ACCOUNT}/insights`, {
-    level: "ad",
-    time_range,
-    time_increment: "1",
-    fields: IF,
-    filtering: JSON.stringify([{ field: "campaign.id", operator: "IN", value: WATCHED }]),
-  });
+  // insights diários por anúncio, só das campanhas monitoradas — em blocos de 30 dias
+  // (o histórico inteiro de uma vez é pesado e a Meta às vezes responde "An unknown error occurred")
+  const rows = [];
+  for (let d0 = new Date(SINCE + "T12:00:00Z"); d0.toISOString().slice(0, 10) <= until; d0 = new Date(d0.getTime() + 30 * 864e5)) {
+    const fim = new Date(Math.min(d0.getTime() + 29 * 864e5, new Date(until + "T12:00:00Z").getTime()));
+    rows.push(...await getAll(`act_${ACCOUNT}/insights`, {
+      level: "ad",
+      time_range: JSON.stringify({ since: d0.toISOString().slice(0, 10), until: fim.toISOString().slice(0, 10) }),
+      time_increment: "1",
+      fields: IF,
+      filtering: JSON.stringify([{ field: "campaign.id", operator: "IN", value: WATCHED }]),
+    }));
+  }
 
   const daily = rows
     // mantém dia sem gasto se teve impressão ou resultado: a Meta credita conversão
