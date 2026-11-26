@@ -1,32 +1,28 @@
 name: Atualizar dados Vuou (Meta + Google)
 
-# AGENDAMENTO CONFIÁVEL (mesmo desenho do painel da Exponential)
-# ---------------------------------------------------------------
-# O cron gratuito do GitHub atrasa e pula rodadas (na prática roda a cada ~6 a 8 h).
-# O gatilho workflow_dispatch dispara na hora. Então cada execução roda um LOOP
-# (atualiza a cada ~55 min por ~5 h) e, no fim, dispara a próxima com `gh workflow run`:
-# uma corrente que não depende do cron. O `schedule` fica só como rede de segurança,
-# para reerguer a corrente se ela cair. `cancel-in-progress: true` garante uma corrente só.
+# AGENDAMENTO (26/11/2026): uma rodada curta por hora, pelo agendamento normal do GitHub.
+# Antes cada execução ficava ~6 h ligada (loop de 55 min) e disparava a próxima sozinha. O GitHub
+# desativou o painel da Contourline em 24/11 por termos de uso, e esse uso contínuo do Actions é a
+# causa mais provável. Não voltar ao loop nem ao auto-disparo: o agendamento pode atrasar, e tudo bem.
 
 on:
   schedule:
-    - cron: "17,47 * * * *"   # rede de segurança: reergue a corrente se ela cair
-  workflow_dispatch:          # gatilho confiável: usado pela própria corrente e à mão
+    - cron: "17 * * * *"      # de hora em hora (o GitHub pode atrasar ou pular rodadas)
+  workflow_dispatch:          # rodar à mão: Actions > este workflow > Run workflow
 
 # B5 (passo 11): nada por padrão; o job abaixo pede só o necessário.
 permissions: {}
 
 concurrency:
   group: update-data
-  cancel-in-progress: true
+  cancel-in-progress: false   # uma rodada por vez; a seguinte espera
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 350        # ~5h50 (limite do runner é 6 h); no fim dispara a próxima
+    timeout-minutes: 20         # uma rodada leva poucos minutos
     permissions:
       contents: write           # commit do data.json
-      actions: write            # a corrente dispara a própria próxima execução
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -34,7 +30,7 @@ jobs:
         with:
           node-version: "22"   # Node 20 saiu de suporte em 30/04/2026
 
-      - name: Loop de atualização (a cada ~55 min, por ~5 h)
+      - name: Atualizar os dados (uma rodada)
         env:
           META_TOKEN: ${{ secrets.META_TOKEN }}
           AD_ACCOUNT_ID: ${{ secrets.AD_ACCOUNT_ID }}
@@ -52,40 +48,20 @@ jobs:
           # variável vazia vira "use o padrão do script"
           [ -z "$GOOGLE_CUSTOMER_ID" ] && unset GOOGLE_CUSTOMER_ID
           [ -z "$GOOGLE_LOGIN_CUSTOMER_ID" ] && unset GOOGLE_LOGIN_CUSTOMER_ID
-          for i in $(seq 1 6); do
-            t0=$(date +%s)
-            echo "::group::Rodada $i - $(date -u '+%Y-%m-%d %H:%M UTC')"
-            git fetch -q origin main
-            git reset -q --hard origin/main        # parte do que está publicado (sem conflito)
-            node scripts/fetch-meta.mjs || echo "AVISO: Meta falhou nesta rodada (segue)"
-            if [ -n "$GOOGLE_REFRESH_TOKEN" ]; then
-              node scripts/fetch-google.mjs || echo "AVISO: Google falhou nesta rodada (segue)"
-            else
-              echo "Secrets do Google Ads não configurados — pulando."
-            fi
-            git add data.json thumbs 2>/dev/null || git add data.json
-            [ -f data-google.json ] && git add data-google.json
-            if [ -n "$(git status --porcelain -- data.json data-google.json thumbs)" ]; then
-              git commit -q -m "chore: atualiza dados Vuou ($(date -u '+%Y-%m-%d %H:%M UTC'))"
-              git push -q || echo "AVISO: push falhou (a próxima rodada recomeça do publicado)"
-            else
-              echo "Sem mudança nos dados."
-            fi
-            echo "::endgroup::"
-            resto=$(( 3300 - ($(date +%s) - t0) ))
-            if [ "$i" -lt 6 ] && [ "$resto" -gt 0 ]; then sleep "$resto"; fi
-          done
-
-      - name: Disparar a próxima execução (corrente)
-        # success(), não always(): disparar depois de um cancelamento criaria uma tempestade
-        # de cancela/dispara com cancel-in-progress. Se a corrente cair, o schedule a reergue.
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sleep 15
-          for t in 1 2 3; do
-            gh workflow run update-data.yml -R "${{ github.repository }}" --ref main && exit 0
-            echo "Não disparou (tentativa $t); aguardando..."; sleep 20
-          done
-          echo "ERRO: não consegui disparar a próxima; o schedule de segurança assume."
+          echo "Rodada $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git fetch -q origin main
+          git reset -q --hard origin/main        # parte do que está publicado (sem conflito)
+          node scripts/fetch-meta.mjs || echo "AVISO: Meta falhou nesta rodada (segue)"
+          if [ -n "$GOOGLE_REFRESH_TOKEN" ]; then
+            node scripts/fetch-google.mjs || echo "AVISO: Google falhou nesta rodada (segue)"
+          else
+            echo "Secrets do Google Ads não configurados — pulando."
+          fi
+          git add data.json thumbs 2>/dev/null || git add data.json
+          [ -f data-google.json ] && git add data-google.json
+          if [ -n "$(git status --porcelain -- data.json data-google.json thumbs)" ]; then
+            git commit -q -m "chore: atualiza dados Vuou ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+            git push -q || echo "AVISO: push falhou (a próxima rodada recomeça do publicado)"
+          else
+            echo "Sem mudança nos dados."
+          fi
